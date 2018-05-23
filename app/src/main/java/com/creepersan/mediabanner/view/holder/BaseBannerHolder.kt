@@ -5,11 +5,12 @@ import android.view.View
 
 /**
  * Author      : gemvary
- * Time        : 2018-05-22 12:16
+ * Time        : 2018-05-23 14:16
  * Description :
  */
-abstract class BaseBannerHolder(var context:Context) {
+abstract class BaseBannerHolder(var itemView: View) {
     private var isIdle = true
+    val context = itemView.context
 
     /**
      *  标志位定义
@@ -27,11 +28,6 @@ abstract class BaseBannerHolder(var context:Context) {
         isIdle = true
     }
 
-
-    /**
-     *  抽象方法
-     */
-    abstract fun getView(): View
-
+    fun getView(): View = itemView
 
 }

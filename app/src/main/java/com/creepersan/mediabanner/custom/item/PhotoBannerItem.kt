@@ -5,14 +5,14 @@ import android.view.View
 import com.bumptech.glide.Glide
 import com.creepersan.mediabanner.R
 import com.creepersan.mediabanner.custom.holder.PhotoBannerHolder
-import com.creepersan.mediabanner.view.bean.CustomBannerItem
+import com.creepersan.mediabanner.view.item.BaseBannerItem
 
 /**
  * Author      : gemvary
  * Time        : 2018-05-23 14:22
  * Description :
  */
-class PhotoBannerItem() : CustomBannerItem<PhotoBannerHolder>() {
+class PhotoBannerItem() : BaseBannerItem<PhotoBannerHolder>() {
 
     override var isUseDefaultClickEvent: Boolean = false
 

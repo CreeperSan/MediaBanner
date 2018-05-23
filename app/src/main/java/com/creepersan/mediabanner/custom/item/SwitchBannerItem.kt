@@ -3,14 +3,14 @@ package com.creepersan.mediabanner.custom.item
 import android.content.Context
 import com.creepersan.mediabanner.R
 import com.creepersan.mediabanner.custom.holder.SwitchBannerHolder
-import com.creepersan.mediabanner.view.bean.CustomBannerItem
+import com.creepersan.mediabanner.view.item.BaseBannerItem
 
 /**
  * Author      : gemvary
  * Time        : 2018-05-23 17:21
  * Description :
  */
-class SwitchBannerItem : CustomBannerItem<SwitchBannerHolder>() {
+class SwitchBannerItem : BaseBannerItem<SwitchBannerHolder>() {
     var isOn = false
 
     override fun getHolder(context: Context): SwitchBannerHolder {

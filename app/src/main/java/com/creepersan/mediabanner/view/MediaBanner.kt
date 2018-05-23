@@ -7,18 +7,14 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import com.creepersan.mediabanner.view.bean.*
-import com.creepersan.mediabanner.view.config.ImageConfig
-import com.creepersan.mediabanner.view.config.TextConfig
-import com.creepersan.mediabanner.view.config.VideoConfig
-import com.creepersan.mediabanner.view.exception.FormatException
+import com.creepersan.mediabanner.view.item.*
 import com.creepersan.mediabanner.view.holder.*
 import com.creepersan.mediabanner.view.util.Console
-import com.google.android.exoplayer2.ui.PlayerView
 import java.lang.IllegalStateException
 import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
+import kotlin.math.log
 
 /**
  * Author      : gemvary
@@ -41,21 +37,20 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
 
     private val mViewPager by lazy { ViewPager(context) }
     private val mViewPagerAdapter by lazy { MediaBannerPagerAdapter() }
-    private val mBannerItemList by lazy { ArrayList<BaseBannerItem>() }
+    private val mBannerItemList by lazy { ArrayList<BaseBannerItem<*>>() }
     private val mHolderPool by lazy { HashMap<String, LinkedList<BaseBannerHolder>>() }
     private var mBannerScrollListener : OnBannerScrollListener? = null
     private var mBannerClickListener : OnBannerClickListener? = null
     private var autoPlayTimer = Timer()
     private var autoPlayTimerTask = AutoPlayTimerTask()
+    private val mBannerController by lazy { MediaBannerController() }
     private val mRandom by lazy { Random() }
-    private var mGlobalTextConfig = TextConfig(resources)
-    private var mGlobalImageConfig = ImageConfig()
-    private var mGlobalVideoConfig = VideoConfig()
 
     private var mLoopMode = LOOP_LOOP
-    private var mAutoPlayMode = AUTO_PLAY_OFF
+    private var mAutoPlayMode = AUTO_PLAY_NEGATIVE
     private var mAutoPlayDelay = DEFAULT_AUTO_PLAY_DELAY
     private var isScrolling = false
+    private var isCanNextFlag = false
 
     constructor(context: Context):super(context)
     constructor(context: Context, attributeSet: AttributeSet?):super(context, attributeSet)
@@ -73,15 +68,15 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
     /**
      *  对外暴露的设置方法
      */
-    fun addItem(bannerItem: BaseBannerItem){
+    fun addItem(bannerItem: BaseBannerItem<*>){
         mBannerItemList.add(bannerItem)
         mViewPagerAdapter.notifyDataSetChanged()
     }
-    fun <E : BaseBannerItem>addItems(bannerItem: Array<E>){
+    fun <E : BaseBannerItem<*>>addItems(bannerItem: Array<E>){
         mBannerItemList.addAll(bannerItem.asList())
         mViewPagerAdapter.notifyDataSetChanged()
     }
-    fun <E : BaseBannerItem>addItems(bannerItem: Collection<E>){
+    fun <E : BaseBannerItem<*>>addItems(bannerItem: Collection<E>){
         mBannerItemList.addAll(bannerItem)
         mViewPagerAdapter.notifyDataSetChanged()
     }
@@ -102,6 +97,10 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
         return mBannerClickListener
     }
 
+    fun setCanNextFlag(flag:Boolean){
+        isCanNextFlag = flag
+    }
+
     /**
      *  对外暴露的获取信息方法
      */
@@ -114,7 +113,12 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
     fun getAutoPlayDelay():Long{
         return mAutoPlayDelay
     }
-
+    fun getAutoPlayMode():Int {
+        return mAutoPlayMode
+    }
+    fun isScrolling():Boolean{
+        return isScrolling
+    }
     /**
      *  对外暴露的操作方法
      */
@@ -128,7 +132,7 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
             LOOP_LOOP -> { mViewPager.setCurrentItem(( mViewPager.currentItem + 1 ) % mBannerItemList.size, animated) }
             LOOP_RANDOM -> { mViewPager.setCurrentItem( mRandom.nextInt(mBannerItemList.size), animated ) }
         }
-
+        Console.log("ScrollNext() ${getPosition()}      ${System.currentTimeMillis()}")
     }
     fun scrollPrevious(animated:Boolean = true){
         if (mBannerItemList.size <= 0) return
@@ -175,16 +179,6 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
         setAutoPlayDelay(delayTime.toLong())
     }
 
-    fun setGlobalImageConfig(config:ImageConfig){
-        mGlobalImageConfig = config
-    }
-    fun setGlobalTextConfig(config:TextConfig){
-        mGlobalTextConfig = config
-    }
-    fun setGlobalVideoConfig(config: VideoConfig){
-        mGlobalVideoConfig = config
-    }
-
     /**
      *  内部设备刷新选项
      */
@@ -204,7 +198,7 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
     /**
      *  Holder的操作
      */
-    private fun getHolderList(item:BaseBannerItem):LinkedList<BaseBannerHolder>{
+    private fun getHolderList(item:BaseBannerItem<*>):LinkedList<BaseBannerHolder>{
         val key = item.javaClass.name
         return if (mHolderPool.containsKey(key)){
             mHolderPool[key] ?: LinkedList<BaseBannerHolder>().apply { mHolderPool.put(key, this) }
@@ -220,48 +214,17 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
         }
         return default().apply { holderList.add(this) }
     }
-    fun getHolder(item:BaseBannerItem):BaseBannerHolder{
+    fun getHolder(item:BaseBannerItem<*>):BaseBannerHolder{
         val holderList = getHolderList(item)
-        var holder : BaseBannerHolder? = null
-        when(item){
-            is ImageBannerItem  -> {
-                holder = getHolder(holderList,{ ImageBannerHolder(context) })
-                renderBaseClick(item, holder)
-                renderImage(item, holder)
-            }
-            is TextBannerItem -> {
-                holder = getHolder(holderList,{ TextBannerHolder(context) })
-                renderBaseClick(item, holder)
-                renderText(item, holder)
-            }
-            is VideoBannerItem -> {
-                holder = getHolder(holderList,{ VideoBannerHolder(context) })
-                renderBaseClick(item, holder)
-                renderVideo(item, holder)
-            }
-            is CustomBannerItem<*> -> {
-                val aaa = getHolder<CustomBannerHolder>(holderList, { item.getHolder(context) })
-                renderBaseClick(item, aaa)
-                item.rawBindHolder(context, aaa)
-                return aaa
-            }
-            else -> {
-                throw FormatException("所需要展示的不是合法的Banner ${item.javaClass.simpleName}")
-            }
-        }
+        val holder = getHolder<BaseBannerHolder>(holderList, { item.getHolder(context) })
+        renderBaseClick(item, holder)
+        item.rawBindHolder(context, holder)
         return holder
     }
 
-    private fun renderBaseClick(item:BaseBannerItem, holder:BaseBannerHolder){
+    private fun renderBaseClick(item:BaseBannerItem<*>, holder:BaseBannerHolder){
         // 能够响应点击事件的View
-        val view = when (holder) {
-            is VideoBannerHolder -> {
-                (holder.getView() as PlayerView).overlayFrameLayout
-            }
-            else -> {
-                holder.getView()
-            }
-        }
+        val view = holder.getView()
         // 点击触发的 Listener
         val listener = if (item.isUseDefaultClickEvent) {
             this
@@ -271,28 +234,17 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
 
         view.setOnClickListener( listener )
     }
-    private fun renderImage(item:ImageBannerItem, holder:ImageBannerHolder){
-        val config = item.config ?: mGlobalImageConfig
-        if (item.imageID == ImageBannerItem.EMPTY_IMAGE_ID){    // 如果没有ID，就读取文件
-            holder.setImage(item.imagePath, config)
-        }else{
-            holder.setImageRes(item.imageID, config)
-        }
-    }
-    private fun renderText(item:TextBannerItem, holder:TextBannerHolder){
-        val config = item.config ?: mGlobalTextConfig
-        holder.setText(item.text, config)
-    }
-    private fun renderVideo(item:VideoBannerItem, holder:VideoBannerHolder){
-        holder.play(item.video)
-    }
+
 
     /**
      *  一些事件的回调
      */
     override fun onPageScrollStateChanged(state: Int) {
         when(state){
-            ViewPager.SCROLL_STATE_IDLE -> { isScrolling = false }
+            ViewPager.SCROLL_STATE_IDLE -> { isScrolling = false;if (isCanNextFlag){
+                isCanNextFlag = false;
+                scrollNext()
+            } }
             ViewPager.SCROLL_STATE_DRAGGING -> { isScrolling = true }
             ViewPager.SCROLL_STATE_SETTLING -> { isScrolling = true }
         }
@@ -300,9 +252,14 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
     override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
     }
     override fun onPageSelected(position: Int) {
-        mBannerItemList[position].getOnStateChangeListener()?.onShow()  // 正在播放的
+        val item = mBannerItemList[position]
+        item.parseHolder(BaseBannerItem.ON_SHOW, this, position, mBannerController)
+        val posPrev = position - 1
+        val posNext = position + 1
+        actionWhenPositionValid(posPrev, -1, mBannerItemList.size, { mBannerItemList[posPrev].parseHolder(BaseBannerItem.ON_PREPARE, this, posPrev, mBannerController) })
+        actionWhenPositionValid(posNext, -1, mBannerItemList.size, { mBannerItemList[posNext].parseHolder(BaseBannerItem.ON_PREPARE, this, posNext, mBannerController) })
         mBannerScrollListener?.onPageChange(position)
-        Console.log("onPageSelected($position)")
+        isCanNextFlag = false
     }
 
     override fun onClick(v: View?) {
@@ -311,9 +268,6 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
         mBannerClickListener?.onClick(position, mBannerItemList[position])
     }
 
-    /**
-     *  获取数据的一些方法
-     */
 
     /**
      *  内部类
@@ -328,17 +282,19 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
         }
 
         override fun instantiateItem(container: ViewGroup, position: Int): Any {
-            val holder = getHolder(mBannerItemList[position])
+            val item = mBannerItemList[position]
+            val holder = getHolder(item)
             holder.setBusy()
             container.addView(holder.getView())
-            mBannerItemList[position].getOnStateChangeListener()?.onCreate()   // 生命周期创建
+            item.parseHolder(BaseBannerItem.ON_CREATE, this@MediaBanner, position, mBannerController, holder)
             return holder
         }
 
         override fun destroyItem(container: ViewGroup, position: Int, obj: Any) {
+            val item = mBannerItemList[position]
             val holder = obj as BaseBannerHolder
+            item.parseHolder(BaseBannerItem.ON_DESTROY, this@MediaBanner, position, mBannerController, holder)
             container.removeView(holder.getView())
-            mBannerItemList[position].getOnStateChangeListener()?.onDestroy()   // 生命周期销毁
             holder.setIdle()
         }
     }
@@ -349,10 +305,26 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
                     post { scrollNext() }
                 }
                 AUTO_PLAY_NEGATIVE -> {
-                    if (!isScrolling){ post{ scrollNext() } }
+                    if (!isScrolling && mBannerItemList[getPosition()].isUseDefaultAutoPlay){ post{ scrollNext() } }
                 }
             }
         }
+    }
+    inner class MediaBannerController{
+
+        fun requireNext(position:Int){
+            Console.log("请求下一次 ${System.currentTimeMillis()}")
+            val item = mBannerItemList[position]
+            if (mAutoPlayMode == AUTO_PLAY_NEGATIVE && !item.isUseDefaultAutoPlay){
+                Console.log("准许下一次 ${System.currentTimeMillis()}")
+                if (isScrolling){
+                    isCanNextFlag = true
+                }else{
+                    scrollNext()
+                }
+            }
+        }
+
     }
 
     /**
@@ -363,7 +335,7 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
         fun onPageChange(position:Int)
     }
     interface OnBannerClickListener{
-        fun onClick(position: Int, item:BaseBannerItem)
+        fun onClick(position: Int, item:BaseBannerItem<*>)
     }
 
     /**
@@ -375,6 +347,15 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickLis
             autoPlayTimerTask = AutoPlayTimerTask()
         }catch (e:IllegalStateException){
             exceptionHandel?.invoke()
+        }
+    }
+
+    /**
+     *  快捷操作
+     */
+    private inline fun actionWhenPositionValid(position:Int, min:Int, max:Int, action:()->Unit){
+        if (position < max && position > min){
+            action()
         }
     }
 }
