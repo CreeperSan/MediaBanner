@@ -14,16 +14,16 @@ abstract class BaseBannerHolder(var context:Context) {
     /**
      *  标志位定义
      */
-    fun isBusy():Boolean{
+    internal fun isBusy():Boolean{
         return !isIdle
     }
-    fun isIdle():Boolean{
+    internal fun isIdle():Boolean{
         return isIdle
     }
-    fun setBusy(){
+    internal fun setBusy(){
         isIdle = false
     }
-    fun setIdle(){
+    internal fun setIdle(){
         isIdle = true
     }
 

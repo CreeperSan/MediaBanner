@@ -9,6 +9,7 @@ import com.bumptech.glide.Glide
 import com.creepersan.mediabanner.R
 import com.creepersan.mediabanner.view.bean.BaseBannerItem
 import com.creepersan.mediabanner.view.bean.ImageBannerItem
+import com.creepersan.mediabanner.view.config.ImageConfig
 import java.io.File
 
 /**
@@ -20,16 +21,18 @@ class ImageBannerHolder(context: Context) : BaseBannerHolder(context){
 
     private val imageView = ImageView(context).apply { setImageResource(R.drawable.ic_person_black_24dp) }
 
-    fun setImageRes(imgID:Int){
-//        imageView.setImageResource(imgID)
+    fun setImageRes(imgID:Int, config: ImageConfig){
+        initImageView(config)
         Glide.with(context).load(imgID).into(imageView)
     }
-    fun setImage(bitmap:Bitmap){
-//        imageView.setImageBitmap(bitmap)
-        Glide.with(context).load(bitmap).into(imageView)
-    }
-    fun setImage(path:String){
+
+    fun setImage(path:String, config: ImageConfig){
+        initImageView(config)
         Glide.with(context).load(File(path)).into(imageView)
+    }
+
+    private fun initImageView(config:ImageConfig){
+        imageView.scaleType = config.scaleType
     }
 
     override fun getView(): View {

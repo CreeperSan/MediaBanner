@@ -7,6 +7,13 @@ package com.creepersan.mediabanner.view.bean
  */
 open class BaseBannerItem {
     private var listener : OnStateChangeListener? = null
+    open var isUseDefaultClickEvent = true
+    open var isUseDefaultAutoPlay = true
+
+    /**
+     *  属性设置方法
+     */
+
 
     /**
      *  操作方法
@@ -16,6 +23,9 @@ open class BaseBannerItem {
     }
     fun getOnStateChangeListener():OnStateChangeListener?{
         return listener
+    }
+    protected fun notifyNext(){
+
     }
     /**
      *  接口

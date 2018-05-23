@@ -1,5 +1,7 @@
 package com.creepersan.mediabanner.view.bean
 
+import com.creepersan.mediabanner.view.config.ImageConfig
+
 /**
  * Author      : gemvary
  * Time        : 2018-05-22 17:32
@@ -9,6 +11,7 @@ class ImageBannerItem: BaseBannerItem{
 
     var imageID : Int = EMPTY_IMAGE_ID
     var imagePath : String = EMPTY_IMAGE_PATH
+    var config : ImageConfig? = null
 
     companion object {
         const val EMPTY_IMAGE_ID = 0

@@ -1,22 +1,21 @@
 package com.creepersan.mediabanner.view
 
 import android.content.Context
-import android.nfc.FormatException
 import android.support.v4.view.PagerAdapter
 import android.support.v4.view.ViewPager
 import android.util.AttributeSet
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import com.creepersan.mediabanner.view.bean.BaseBannerItem
-import com.creepersan.mediabanner.view.bean.ImageBannerItem
-import com.creepersan.mediabanner.view.bean.TextBannerItem
-import com.creepersan.mediabanner.view.bean.VideoBannerItem
-import com.creepersan.mediabanner.view.holder.BaseBannerHolder
-import com.creepersan.mediabanner.view.holder.ImageBannerHolder
-import com.creepersan.mediabanner.view.holder.TextBannerHolder
-import com.creepersan.mediabanner.view.holder.VideoBannerHolder
+import com.creepersan.mediabanner.view.bean.*
+import com.creepersan.mediabanner.view.config.ImageConfig
+import com.creepersan.mediabanner.view.config.TextConfig
+import com.creepersan.mediabanner.view.config.VideoConfig
+import com.creepersan.mediabanner.view.exception.FormatException
+import com.creepersan.mediabanner.view.holder.*
 import com.creepersan.mediabanner.view.util.Console
+import com.google.android.exoplayer2.ui.PlayerView
+import java.lang.IllegalStateException
 import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
@@ -26,12 +25,11 @@ import kotlin.collections.HashMap
  * Time        : 2018-05-22 09:05
  * Description : 自定义控件
  */
-class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener{
+class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener, View.OnClickListener{
 
     companion object {
         const val LOOP_NO = 0               // 到了尽头就不回来
         const val LOOP_LOOP = 1             // 到了尽头往上翻到第一张
-        const val LOOP_LOOP_INFINITE = 2   // 到了尽头往下翻又是第一张
         const val LOOP_RANDOM = 3           // 随便跳
 
         const val AUTO_PLAY_NEGATIVE = 0    // 消极自动播放
@@ -45,11 +43,17 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener{
     private val mViewPagerAdapter by lazy { MediaBannerPagerAdapter() }
     private val mBannerItemList by lazy { ArrayList<BaseBannerItem>() }
     private val mHolderPool by lazy { HashMap<String, LinkedList<BaseBannerHolder>>() }
-    private var mBannerScrollListener : OnMediaBannerScrollListener? = null
+    private var mBannerScrollListener : OnBannerScrollListener? = null
+    private var mBannerClickListener : OnBannerClickListener? = null
     private var autoPlayTimer = Timer()
     private var autoPlayTimerTask = AutoPlayTimerTask()
+    private val mRandom by lazy { Random() }
+    private var mGlobalTextConfig = TextConfig(resources)
+    private var mGlobalImageConfig = ImageConfig()
+    private var mGlobalVideoConfig = VideoConfig()
+
     private var mLoopMode = LOOP_LOOP
-    private var mAutoPlayMode = AUTO_PLAY_NEGATIVE
+    private var mAutoPlayMode = AUTO_PLAY_OFF
     private var mAutoPlayDelay = DEFAULT_AUTO_PLAY_DELAY
     private var isScrolling = false
 
@@ -63,16 +67,7 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener{
         addView(mViewPager)
         mViewPager.addOnPageChangeListener(this)
         // 自动播放
-        when(mAutoPlayMode){
-            AUTO_PLAY_POSITIVE,
-            AUTO_PLAY_NEGATIVE -> {
-                autoPlayTimer.schedule(autoPlayTimerTask, mAutoPlayDelay, mAutoPlayDelay)
-            }
-            AUTO_PLAY_OFF -> {
-                autoPlayTimerTask.cancel()
-            }
-        }
-        setLoopMode(mAutoPlayMode)
+        refreshAutoPlay()
     }
 
     /**
@@ -94,32 +89,17 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener{
         mViewPagerAdapter.notifyDataSetChanged()
     }
 
-    fun setMediaBannerScrollListener(listener:OnMediaBannerScrollListener){
+    fun setOnBannerScrollListener(listener:OnBannerScrollListener){
         mBannerScrollListener = listener
     }
-    fun getMediaBannerScrollListener():OnMediaBannerScrollListener?{
+    fun getOnBannerScrollListener():OnBannerScrollListener?{
         return mBannerScrollListener
     }
-
-    fun setLoopMode(loopMode:Int){
-        if (loopMode == mLoopMode) return
-        when(loopMode){
-            LOOP_NO -> {
-                autoPlayTimerTask.cancel()
-            }
-            LOOP_LOOP -> {
-                autoPlayTimerTask.cancel()
-                autoPlayTimer.schedule(autoPlayTimerTask, mAutoPlayDelay, mAutoPlayDelay)
-            }
-            LOOP_RANDOM -> {
-                autoPlayTimerTask.cancel()
-                autoPlayTimer.schedule(autoPlayTimerTask, mAutoPlayDelay, mAutoPlayDelay)
-            }
-            else -> {
-                Console.warming("不支持的循环模式 $loopMode")
-            }
-        }
-        mLoopMode = loopMode
+    fun setOnBannerClickListener(listener: OnBannerClickListener){
+        mBannerClickListener = listener
+    }
+    fun getOnBannerClickListener():OnBannerClickListener?{
+        return mBannerClickListener
     }
 
     /**
@@ -131,6 +111,9 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener{
     fun getPosition():Int{
         return mViewPager.currentItem
     }
+    fun getAutoPlayDelay():Long{
+        return mAutoPlayDelay
+    }
 
     /**
      *  对外暴露的操作方法
@@ -140,16 +123,34 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener{
     }
     fun scrollNext(animated:Boolean = true){
         if (mBannerItemList.size <= 0) return
-        mViewPager.setCurrentItem(( mViewPager.currentItem + 1 ) % mBannerItemList.size)
+        when(mLoopMode){
+            LOOP_NO -> { if (mViewPager.currentItem < mBannerItemList.size-1)mViewPager.setCurrentItem(( mViewPager.currentItem + 1 ) % mBannerItemList.size, animated) }
+            LOOP_LOOP -> { mViewPager.setCurrentItem(( mViewPager.currentItem + 1 ) % mBannerItemList.size, animated) }
+            LOOP_RANDOM -> { mViewPager.setCurrentItem( mRandom.nextInt(mBannerItemList.size), animated ) }
+        }
+
     }
     fun scrollPrevious(animated:Boolean = true){
         if (mBannerItemList.size <= 0) return
         val currentPos = mViewPager.currentItem
-        if (currentPos <= 0){
-            mViewPager.setCurrentItem(mBannerItemList.size - 1)
-        }else{
-            mViewPager.setCurrentItem(currentPos - 1)
+        when(mLoopMode){
+            LOOP_NO -> {
+                if (currentPos > 0) {
+                    mViewPager.setCurrentItem(currentPos - 1, animated)
+                }
+            }
+            LOOP_LOOP -> {
+                if (currentPos <= 0) {
+                    mViewPager.setCurrentItem(mBannerItemList.size - 1, animated)
+                } else {
+                    mViewPager.setCurrentItem(currentPos - 1, animated)
+                }
+            }
+            LOOP_RANDOM -> {
+                scrollNext(animated)
+            }
         }
+
     }
     fun scrollLast(animated:Boolean = true){
         if (mBannerItemList.size <= 0) return
@@ -159,14 +160,45 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener{
         mViewPager.setCurrentItem(0, animated)
     }
 
+    fun setLoopMode(loopMode : Int){
+        this.mLoopMode = loopMode
+    }
+    fun setAutoPlay(autoPlayMode : Int){
+        this.mAutoPlayMode = autoPlayMode
+        refreshAutoPlay()
+    }
+    fun setAutoPlayDelay(delayTime : Long){
+        mAutoPlayDelay = delayTime
+        refreshAutoPlay()
+    }
+    fun setAutoPlayDelay(delayTime : Int){
+        setAutoPlayDelay(delayTime.toLong())
+    }
+
+    fun setGlobalImageConfig(config:ImageConfig){
+        mGlobalImageConfig = config
+    }
+    fun setGlobalTextConfig(config:TextConfig){
+        mGlobalTextConfig = config
+    }
+    fun setGlobalVideoConfig(config: VideoConfig){
+        mGlobalVideoConfig = config
+    }
+
     /**
      *  内部设备刷新选项
      */
     private fun refreshAutoPlay(){
-
-    }
-    private fun refreshLoopMode(){
-
+        when(mAutoPlayMode){
+            AUTO_PLAY_OFF -> {
+                autoPlayTimerTask.cancelTask()
+            }
+            AUTO_PLAY_NEGATIVE ,
+            AUTO_PLAY_POSITIVE -> {
+                autoPlayTimerTask.cancelTask()
+                autoPlayTimer.schedule(autoPlayTimerTask, mAutoPlayDelay, mAutoPlayDelay)
+            }
+        }
     }
 
     /**
@@ -194,32 +226,62 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener{
         when(item){
             is ImageBannerItem  -> {
                 holder = getHolder(holderList,{ ImageBannerHolder(context) })
+                renderBaseClick(item, holder)
                 renderImage(item, holder)
             }
             is TextBannerItem -> {
                 holder = getHolder(holderList,{ TextBannerHolder(context) })
+                renderBaseClick(item, holder)
                 renderText(item, holder)
             }
             is VideoBannerItem -> {
                 holder = getHolder(holderList,{ VideoBannerHolder(context) })
+                renderBaseClick(item, holder)
                 renderVideo(item, holder)
             }
+            is CustomBannerItem<*> -> {
+                val aaa = getHolder<CustomBannerHolder>(holderList, { item.getHolder(context) })
+                renderBaseClick(item, aaa)
+                item.rawBindHolder(context, aaa)
+                return aaa
+            }
             else -> {
-                throw FormatException("所需要展示的不是合法的Banner对象 ${item.javaClass.simpleName}")
+                throw FormatException("所需要展示的不是合法的Banner ${item.javaClass.simpleName}")
             }
         }
         return holder
     }
 
+    private fun renderBaseClick(item:BaseBannerItem, holder:BaseBannerHolder){
+        // 能够响应点击事件的View
+        val view = when (holder) {
+            is VideoBannerHolder -> {
+                (holder.getView() as PlayerView).overlayFrameLayout
+            }
+            else -> {
+                holder.getView()
+            }
+        }
+        // 点击触发的 Listener
+        val listener = if (item.isUseDefaultClickEvent) {
+            this
+        } else {
+            null
+        }
+
+        view.setOnClickListener( listener )
+    }
     private fun renderImage(item:ImageBannerItem, holder:ImageBannerHolder){
+        val config = item.config ?: mGlobalImageConfig
         if (item.imageID == ImageBannerItem.EMPTY_IMAGE_ID){    // 如果没有ID，就读取文件
-            holder.setImage(item.imagePath)
+            holder.setImage(item.imagePath, config)
         }else{
-            holder.setImageRes(item.imageID)
+            holder.setImageRes(item.imageID, config)
         }
     }
     private fun renderText(item:TextBannerItem, holder:TextBannerHolder){
-        holder.setText(item.text)
+        val config = item.config ?: mGlobalTextConfig
+        holder.setText(item.text, config)
     }
     private fun renderVideo(item:VideoBannerItem, holder:VideoBannerHolder){
         holder.play(item.video)
@@ -235,14 +297,18 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener{
             ViewPager.SCROLL_STATE_SETTLING -> { isScrolling = true }
         }
     }
-
     override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
     }
-
     override fun onPageSelected(position: Int) {
         mBannerItemList[position].getOnStateChangeListener()?.onShow()  // 正在播放的
         mBannerScrollListener?.onPageChange(position)
         Console.log("onPageSelected($position)")
+    }
+
+    override fun onClick(v: View?) {
+        if (mBannerClickListener == null) return
+        val position = getPosition()
+        mBannerClickListener?.onClick(position, mBannerItemList[position])
     }
 
     /**
@@ -288,12 +354,27 @@ class MediaBanner : FrameLayout, ViewPager.OnPageChangeListener{
             }
         }
     }
+
     /**
      *  接口
      */
 
-    interface OnMediaBannerScrollListener{
+    interface OnBannerScrollListener{
         fun onPageChange(position:Int)
     }
+    interface OnBannerClickListener{
+        fun onClick(position: Int, item:BaseBannerItem)
+    }
 
+    /**
+     *  拓展方法
+     */
+    private fun TimerTask.cancelTask(exceptionHandel:(()->Unit)? = null){
+        try {
+            autoPlayTimerTask.cancel()
+            autoPlayTimerTask = AutoPlayTimerTask()
+        }catch (e:IllegalStateException){
+            exceptionHandel?.invoke()
+        }
+    }
 }
