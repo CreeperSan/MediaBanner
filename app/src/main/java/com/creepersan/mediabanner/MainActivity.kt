@@ -1,15 +1,18 @@
 package com.creepersan.mediabanner
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
-import android.util.Log
-import android.widget.SeekBar
-import com.creepersan.mediabanner.view.MediaBanner
-import com.creepersan.mediabanner.view.bean.BaseBannerItem
-import com.creepersan.mediabanner.view.bean.ImageBannerItem
-import com.creepersan.mediabanner.view.bean.TextBannerItem
-import com.creepersan.mediabanner.view.bean.VideoBannerItem
+import android.widget.ImageView
+import com.creepersan.mediabannerview.MediaBannerView
+import com.creepersan.mediabannerview.`interface`.ImageLoadInterface
+import com.creepersan.mediabannerview.item.ImageBannerItem
+import com.creepersan.mediabannerview.item.TextBannerItem
+import com.creepersan.mediabannerview.item.VideoBannerItem
 import kotlinx.android.synthetic.main.activity_main.*
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -17,60 +20,38 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        mainMediaBanner.addItems(arrayOf(
+        MediaBannerView.imageLoader = object : ImageLoadInterface{
+            override fun loadImage(context: Context, img: String, imageView: ImageView) {
+                imageView.setImageBitmap(BitmapFactory.decodeFile(img))
+            }
+
+            override fun loadImage(context: Context, img: Int, imageView: ImageView) {
+                imageView.setImageResource(img)
+            }
+
+            override fun loadImage(context: Context, img: File, imageView: ImageView) {
+                imageView.setImageBitmap(BitmapFactory.decodeFile(img.absolutePath))
+            }
+
+            override fun loadImage(context: Context, img: Bitmap, imageView: ImageView) {
+                imageView.setImageBitmap(img)
+            }
+        }
+
+        mainBannerView.addItems(arrayOf(
+                TextBannerItem(R.string.app_name),
+                TextBannerItem("11111111111111"),
+                TextBannerItem("222222222222222"),
+                TextBannerItem("33333333333333"),
+                TextBannerItem("44444444444444444"),
+                ImageBannerItem(R.drawable.img1).setScaleType(ImageView.ScaleType.CENTER_CROP),
                 VideoBannerItem("/storage/emulated/0/DCIM/Camera/VID_20170710_150012.mp4"),
-                ImageBannerItem(R.drawable.ic_launcher_background),
-                ImageBannerItem("/storage/emulated/0/DCIM/Camera/IMG_20170223_172040.jpg").apply { setOnStateChangeListener(
-                        object : BaseBannerItem.OnStateChangeListener{
-                            override fun onShow() {
-                                Log.i("MediaBanner", "正在显示！")
-                            }
-
-                            override fun onCreate() {
-                                Log.i("MediaBanner", "创建了")
-                            }
-
-                            override fun onDestroy() {
-                                Log.i("MediaBanner", "销毁了")
-                            }
-
-                        }
-                ) },
-                ImageBannerItem("/storage/emulated/0/DCIM/Camera/IMG_20170708_100653.jpg"),
                 VideoBannerItem("/storage/emulated/0/DCIM/Camera/VID_20170709_142306.mp4"),
-                ImageBannerItem(R.drawable.ic_audiotrack_black_24dp),
                 VideoBannerItem("/storage/emulated/0/DCIM/Camera/VID_20170223_104913.mp4"),
-                ImageBannerItem(R.drawable.ic_brightness_2_black_24dp),
-                ImageBannerItem("/storage/emulated/0/DCIM/Camera/IMG_20170710_172242.jpg"),
-                TextBannerItem("Fire in the hole"),
-                ImageBannerItem(R.mipmap.ic_launcher),
-                ImageBannerItem("/storage/emulated/0/DCIM/Camera/IMG_20170711_121252.jpg"),
-                TextBannerItem("纯文本"),
-                VideoBannerItem("/storage/emulated/0/DCIM/Camera/VID_20170709_142306.mp4"),
-                VideoBannerItem("/storage/emulated/0/DCIM/Camera/VID_20170710_150012.mp4")
+                VideoBannerItem(R.raw.big_buck_bunny),
+                VideoBannerItem("/storage/emulated/0/测试视频/1.mp4"),
+                VideoBannerItem("/storage/emulated/0/测试视频/2.mp4"),
+                VideoBannerItem("/storage/emulated/0/测试视频/3.mp4")
         ))
-
-        mainSeekBar.max = mainMediaBanner.getSize()-1
-        mainSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener{
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser){
-                    mainMediaBanner.scrollTo(progress)
-                }
-            }
-        })
-
-        mainMediaBanner.setMediaBannerScrollListener(object : MediaBanner.OnMediaBannerScrollListener{
-            override fun onPageChange(position: Int) {
-                mainSeekBar.progress = position
-            }
-        })
-
-        mainFirst.setOnClickListener { mainMediaBanner.scrollFirst() }
-        mainPrev.setOnClickListener { mainMediaBanner.scrollPrevious() }
-        mainNext.setOnClickListener { mainMediaBanner.scrollNext() }
-        mainLast.setOnClickListener { mainMediaBanner.scrollLast() }
-
     }
 }
